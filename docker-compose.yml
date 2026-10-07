@@ -1,0 +1,27 @@
+services:
+  agy-feishu-bot:
+    build: .
+    image: agy-feishu-bot:latest
+    container_name: agy-feishu-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override host paths inside the container as needed
+      ANTIGRAVITY_HOME: ${ANTIGRAVITY_HOME:-/home/bot/.gemini/antigravity-cli}
+      ANTIGRAVITY_BIN: ${ANTIGRAVITY_BIN:-}
+      WORKSPACE_ROOT: ${WORKSPACE_ROOT:-/workspace}
+    volumes:
+      # Persist bot state (sqlite, logs, downloads)
+      - ./antigravity_bot.db:/app/antigravity_bot.db
+      - ./logs:/app/logs
+      - ./downloads:/app/downloads
+      # Mount host antigravity CLI data (transcripts, oauth, global memory)
+      - ${HOST_ANTIGRAVITY_HOME:-${HOME}/.gemini/antigravity-cli}:/home/bot/.gemini/antigravity-cli
+      # Optional: mount a host workspace the agent is allowed to operate on
+      - ${HOST_WORKSPACE:-${HOME}}:/workspace
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,174 @@
+import os
+import sys
+import shutil
+from typing import Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+class Settings(BaseSettings):
+    app_id: str = Field(default="", alias="APP_ID")
+    feishu_app_id: str = Field(default="", alias="FEISHU_APP_ID")
+    app_secret: str = Field(default="", alias="APP_SECRET")
+    feishu_app_secret: str = Field(default="", alias="FEISHU_APP_SECRET")
+    admin_users: str = Field(default="", alias="ADMIN_USERS")
+    allowed_users: str = Field(default="", alias="ALLOWED_USERS")
+    allowed_chats: str = Field(default="", alias="ALLOWED_CHATS")
+    dangerously_skip_permissions: bool = Field(default=True, alias="DANGEROUSLY_SKIP_PERMISSIONS")
+    workspace_root: str = Field(
+        default_factory=lambda: os.path.abspath(os.path.dirname(__file__)),
+        alias="WORKSPACE_ROOT",
+    )
+
+    # Antigravity / agy installation overrides (portable across machines & containers)
+    antigravity_bin: str = Field(default="", alias="ANTIGRAVITY_BIN")
+    antigravity_home: str = Field(
+        default="",
+        alias="ANTIGRAVITY_HOME",
+        description="Root dir of antigravity-cli data (default: ~/.gemini/antigravity-cli)",
+    )
+
+    # Optional default model configuration
+    default_model: str = Field(default="gemini-3.8-flash-high", alias="DEFAULT_MODEL")
+
+    # Typesafe sandbox configuration
+    typesafe_enabled: bool = Field(default=False, alias="TYPESAFE_ENABLED")
+    typesafe_tier: str = Field(default="", alias="TYPESAFE_TIER")
+
+    model_config = SettingsConfigDict(
+        env_file=os.path.join(BASE_DIR, ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+
+settings = Settings()
+
+APP_ID = settings.feishu_app_id or settings.app_id
+DEFAULT_MODEL = settings.default_model or "gemini-3.7-flash-low"
+APP_SECRET = settings.feishu_app_secret or settings.app_secret
+
+SESSION_FILE = os.path.join(BASE_DIR, "chat_sessions.json")
+PROFILE_FILE = os.path.join(BASE_DIR, "user_profiles.json")
+
+
+def _default_antigravity_home() -> str:
+    return os.path.expanduser("~/.gemini/antigravity-cli")
+
+
+def get_antigravity_home() -> str:
+    """Return the antigravity-cli data root (overridable via ANTIGRAVITY_HOME)."""
+    raw = (settings.antigravity_home or "").strip()
+    if raw:
+        return os.path.abspath(os.path.expanduser(raw))
+    return _default_antigravity_home()
+
+
+def get_brain_dir() -> str:
+    """Conversation brain directory that holds per-conversation transcript logs."""
+    return os.path.join(get_antigravity_home(), "brain")
+
+
+def get_transcript_path(conv_id: str) -> str:
+    """Canonical transcript.jsonl path for a conversation id."""
+    return os.path.join(
+        get_brain_dir(),
+        conv_id,
+        ".system_generated",
+        "logs",
+        "transcript.jsonl",
+    )
+
+
+def get_oauth_token_path() -> str:
+    return os.path.join(get_antigravity_home(), "antigravity-oauth-token")
+
+
+def get_global_memory_path() -> str:
+    return os.path.join(get_antigravity_home(), "global_memory.json")
+
+
+def find_antigravity_bin() -> Optional[str]:
+    # Explicit override first
+    explicit = (settings.antigravity_bin or "").strip()
+    if explicit:
+        path = os.path.abspath(os.path.expanduser(explicit))
+        if os.path.exists(path):
+            return path
+
+    # Try finding in PATH (shutil.which automatically inspects PATHEXT on Windows)
+    for name in ["agy", "antigravity"]:
+        path = shutil.which(name)
+        if path:
+            return path
+
+    # Try checking relative to the current python executable (venv / local scripts)
+    if sys.executable:
+        bin_dir = os.path.dirname(sys.executable)
+        for name in ["agy", "antigravity", "agy.exe", "antigravity.exe", "agy.cmd", "antigravity.cmd"]:
+            c = os.path.join(bin_dir, name)
+            if os.path.exists(c):
+                return c
+
+    # Try common user-local and system locations
+    home = os.path.expanduser("~")
+    candidates = [
+        os.path.join(home, ".local", "bin", "agy"),
+        os.path.join(home, ".local", "bin", "antigravity"),
+        os.path.join(home, ".npm-global", "bin", "agy"),
+        os.path.join(home, ".npm-global", "bin", "antigravity"),
+        "/usr/local/bin/agy",
+        "/usr/local/bin/antigravity",
+        "/root/.local/bin/agy",
+        "/root/.local/bin/antigravity",
+    ]
+
+    # Windows-specific global and local paths
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", "")
+        localappdata = os.environ.get("LOCALAPPDATA", "")
+        if appdata:
+            candidates.extend([
+                os.path.join(appdata, "npm", "agy.cmd"),
+                os.path.join(appdata, "npm", "antigravity.cmd"),
+            ])
+        if localappdata:
+            candidates.extend([
+                os.path.join(localappdata, "Programs", "antigravity", "agy.exe"),
+            ])
+        candidates.extend([
+            os.path.join(home, ".local", "bin", "agy.exe"),
+            os.path.join(home, "AppData", "Roaming", "npm", "agy.cmd"),
+        ])
+
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return None
+
+
+ANTIGRAVITY_BIN = find_antigravity_bin()
+
+# --- Typesafe Configuration ---
+TYPESAFE_ENABLED = settings.typesafe_enabled
+TYPESAFE_TIER = settings.typesafe_tier
+
+# --- Versioning Configuration ---
+BASE_VERSION_PREFIX = "v3.1."
+VERSION_START_COMMIT = 326  # Used to calculate patch number (commit_count - start_commit)
+
+# --- Whitelist & Permission Configuration ---
+ADMIN_USERS = [uid.strip() for uid in settings.admin_users.split(",") if uid.strip()]
+ALLOWED_USERS = [uid.strip() for uid in settings.allowed_users.split(",") if uid.strip()]
+ALLOWED_CHATS = [cid.strip() for cid in settings.allowed_chats.split(",") if cid.strip()]
+DANGEROUSLY_SKIP_PERMISSIONS = settings.dangerously_skip_permissions
+
+# --- Workspace & Project Directory Configuration ---
+WORKSPACE_ROOT = settings.workspace_root
+
+# Back-compat aliases for path helpers (prefer the get_* functions)
+ANTIGRAVITY_HOME = get_antigravity_home()
+BRAIN_DIR = get_brain_dir()
