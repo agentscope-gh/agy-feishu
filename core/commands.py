@@ -445,7 +445,7 @@ async def handle_slash_command(user_text, message_id, chat_id, session_data, run
             await asyncio.get_running_loop().run_in_executor(None, lambda: send_reply_sdk(message_id, reply_text))
         return True, user_text
         
-    elif user_text.startswith("/clear"):
+    elif user_text.startswith(("/clear", "/new", "/reset")):
         session_data["conversation"] = ""
         await save_session_async(chat_id, session_data)
         try:

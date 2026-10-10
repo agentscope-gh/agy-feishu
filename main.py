@@ -165,7 +165,7 @@ async def main():
     plugin_manager.register_system_commands([
         "/help", "/model", "/card", "/menu", "/commands", "/cmds", "/shortcuts",
         "/project", "/note", "/notes",
-        "/status", "/context", "/quota", "/clear", "/stop", "/update", "/ping",
+        "/status", "/context", "/quota", "/clear", "/new", "/reset", "/stop", "/update", "/ping",
         "/newproj_resolve", "/cron", "/schedule", "/plugin", "/plugins", "/user",
         "/continue", "/attach", "/resume", "/conversations", "/convs"
     ])
